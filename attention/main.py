@@ -5,11 +5,10 @@ sys.path.append(str(Path(__file__).parent.parent))
 import os
 os.environ['TF_GPU_ALLOCATOR'] = 'cuda_malloc_async'
 
-import json
 import datetime
 import numpy as np
 
-from model import create_model
+from model import create_model, AttentionPooling, FeatureSelectionModule, LearningModule
 from config import *
 from utils.load_data import load_data, data_processing
 from utils.data_generator import DataGenerator,DataGeneratorCenters
@@ -19,10 +18,9 @@ from utils.split import train_test_split_patients_
 import tensorflow as tf
 tf.config.experimental.set_memory_growth(tf.config.list_physical_devices('GPU')[0], True)
 
-from keras.regularizers import l2
-from keras.optimizers import Adam
+from keras.regularizers import L2
 from keras.callbacks import EarlyStopping
-from keras.models import save_model
+from keras.models import save_model, load_model
 
 if __name__ == '__main__':
 
@@ -35,15 +33,15 @@ if __name__ == '__main__':
     model_config = {
         'input_dim': input_dim,
         'output_dim': 1,
-        'weights_dim': 128,
+        'attention_units': 8,
+        'feature_selection_units': 128,
         'V_init': 'uniform',
         'w_init': 'uniform',
-        'learning_rate': 1e-3,
-        'kernel_regularizer': l2(1e-2),
+        'learning_rate': 5e-3,
+        'attention_kernel_regularizer': L2(1e-2),
         'use_gated_attention': True,
     }
     model_ = create_model(**model_config)
-    model_.build(input_shape=input_dim)
     model_.summary()
 
     # Split train and validation sets
@@ -58,7 +56,7 @@ if __name__ == '__main__':
     validation_generator = DataGenerator(
         X_val,
         y_val,
-        batch_size=32,
+        batch_size=1,
     )
 
     # Set up callbacks
@@ -70,10 +68,14 @@ if __name__ == '__main__':
 
     # Train the model
     model = model_
-    model.fit_generator(
-        generator=train_generator,
-        validation_data=validation_generator,
-        epochs=500,
+    model.fit(
+        x=X_train,
+        y=y_train,
+        validation_data=(X_val,y_val),
+        batch_size =16,
+        validation_batch_size=1,
+        class_weight=class_weight,
+        epochs=100,
         verbose=1,
         callbacks=[early_stopping],
     )
@@ -81,9 +83,18 @@ if __name__ == '__main__':
     # Save the model
     date = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
     save_path = SAVED_MODELS_PATH / date
-    save_model(model, save_path / 'model_weights.h5')
-    with open(save_path / 'model_config.json', 'w') as f:
-        json.dump(model_config, f)
+    save_model(model, save_path / 'model.hdf5', save_format='hdf5')
+
+    # Load the model
+    model = load_model(
+        save_path / 'model.hdf5',
+        custom_objects={
+            'AttentionPooling': AttentionPooling,
+            'FeatureSelectionModule': FeatureSelectionModule,
+            'LearningModule': LearningModule,
+            'L2': L2,
+        },
+    )
 
     # Evaluate the model
     print('Evaluating the model...')
