@@ -218,10 +218,11 @@ def create_model(
         input_dim,
         output_dim=1,
         attention_units=128,
+        do_feature_selection=False,
         feature_selection_units=512,
         V_init='uniform',
         w_init='uniform',
-        learning_rate=1e-3,
+        learning_rate=1e-4,
         attention_kernel_regularizer=None,
         feature_selection_kernel_regularizer=None,
         use_gated_attention=False,
@@ -244,14 +245,15 @@ def create_model(
         use_gated_attention=use_gated_attention,
     )(inputs)
 
-    feature_mask = FeatureSelectionModule(
-        feature_selection_units,
-        kernel_regularizer=feature_selection_kernel_regularizer,
-    )(x_pooled)
+    if do_feature_selection:
+        feature_mask = FeatureSelectionModule(
+            feature_selection_units,
+            kernel_regularizer=feature_selection_kernel_regularizer,
+        )(x_pooled)
 
-    x_pooled_fs = x_pooled * feature_mask
+        x_pooled = x_pooled * feature_mask
 
-    output = LearningModule(output_dim)(x_pooled_fs)
+    output = LearningModule(output_dim)(x_pooled)
     
     model = Model(inputs=inputs, outputs=output)
 

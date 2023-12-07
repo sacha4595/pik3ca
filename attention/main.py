@@ -11,7 +11,7 @@ import numpy as np
 from model import create_model, AttentionPooling, FeatureSelectionModule, LearningModule
 from config import *
 from utils.load_data import load_data, data_processing
-from utils.data_generator import DataGenerator,DataGeneratorCenters
+from utils.data_generator import DataGenerator,DataGeneratorCenters, DataGeneratorInterMixUp, DataGeneratorIntraMixUp
 from utils.submission import test_submission
 from utils.split import train_test_split_patients_
 
@@ -33,25 +33,26 @@ if __name__ == '__main__':
     model_config = {
         'input_dim': input_dim,
         'output_dim': 1,
-        'attention_units': 8,
-        'feature_selection_units': 128,
+        'attention_units': 16,
+        'do_feature_selection': False,
+        'feature_selection_units': 16,
         'V_init': 'uniform',
         'w_init': 'uniform',
-        'learning_rate': 5e-3,
-        'attention_kernel_regularizer': L2(1e-2),
+        'learning_rate': 1e-4,
         'use_gated_attention': True,
     }
     model_ = create_model(**model_config)
     model_.summary()
 
     # Split train and validation sets
-    X_train, X_val, y_train, y_val, df_train, df_val = train_test_split_patients_(features_, y_train, patients_, df_train, test_size=0.1, random_state=42)
+    X_train, X_val, y_train, y_val, df_train, df_val = train_test_split_patients_(features_, y_train, patients_, df_train, test_size=0.2, random_state=42)
 
     # Create the data generators
-    train_generator = DataGeneratorCenters(
+    train_generator = DataGeneratorInterMixUp(
         X_train,
         y_train,
-        metadata=centers_,
+        batch_size=16,
+        same_class=False,
     )
     validation_generator = DataGenerator(
         X_val,
@@ -60,22 +61,14 @@ if __name__ == '__main__':
     )
 
     # Set up callbacks
-    early_stopping = EarlyStopping(monitor='val_auc', patience=50, restore_best_weights=True, mode='max')
-
-    # Class weight
-    class_ratio = np.sum(y_train == 0) / np.sum(y_train == 1)
-    class_weight = {0: 1, 1: class_ratio}
+    early_stopping = EarlyStopping(monitor='val_auc', patience=100, restore_best_weights=True, mode='max')
 
     # Train the model
-    model = model_
+    model=model_
     model.fit(
-        x=X_train,
-        y=y_train,
-        validation_data=(X_val,y_val),
-        batch_size =16,
-        validation_batch_size=1,
-        class_weight=class_weight,
-        epochs=100,
+        x=train_generator,
+        validation_data=validation_generator,
+        epochs=500,
         verbose=1,
         callbacks=[early_stopping],
     )
